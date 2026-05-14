@@ -2,7 +2,6 @@
 name: spec-writer
 package: workflow
 description: Transforms PM-approved requirements into concrete implementation plans — outputs plan.md
-model: deepseek/deepseek-chat
 thinking: high
 tools: read, grep, find, ls, bash, write, edit, contact_supervisor
 systemPromptMode: replace

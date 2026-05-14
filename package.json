@@ -5,11 +5,6 @@
   "keywords": ["pi-package", "workflow", "agentic", "development", "wiggum"],
   "repository": "github:jasondostal/pi-wiggum",
   "license": "MIT",
-  "pi": {
-    "extensions": ["./extensions"],
-    "prompts": ["./prompts"],
-    "image": "https://raw.githubusercontent.com/jasondostal/pi-wiggum/main/docs/generated/wiggum-logo.png"
-  },
   "peerDependencies": {
     "pi-subagents": "*",
     "@earendil-works/pi-coding-agent": "*"

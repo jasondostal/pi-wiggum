@@ -2,7 +2,6 @@
 name: product-manager
 package: workflow
 description: Requirements review, gap analysis, acceptance criteria — outputs pm-review.md
-model: deepseek/deepseek-chat
 thinking: high
 tools: read, grep, find, ls, bash, write, edit, contact_supervisor
 systemPromptMode: replace

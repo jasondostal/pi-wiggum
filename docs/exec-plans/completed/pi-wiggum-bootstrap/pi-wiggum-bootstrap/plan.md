@@ -181,10 +181,4 @@ The first Wiggum run builds the doc-gardening agent — a worker that scans `doc
 
 ### First Deliverable
 
-The Wiggum loop builds its own doc-gardening tool as the first real run. This proves the loop works end-to-end while producing something useful immediately.
-
-The doc-gardening agent:
-- Scans `docs/` for staleness (last-modified vs code changes)
-- Compares documented behavior against actual code
-- Flags drift in `docs/tech-debt-tracker.md`
-- Optionally opens fix PRs for clear cases
+The first Wiggum run will process a real feature request through all 8 phases. The doc-gardener was built directly (not via the loop) because it is a simple standalone cron agent.

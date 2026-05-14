@@ -9,9 +9,13 @@ You are orchestrating the Ralph Wiggum loop — an autonomous agentic dev workfl
 
 Run these phases in order. Each phase must complete before the next begins.
 
+**Before starting each phase, check for existing artifacts from that phase.** If a phase's expected output already exists and is valid, skip that phase and proceed. This makes the loop idempotent — safe to resume after session interruption.
+
 ### Phase 1: GATHER
 
-Launch `scout` and `researcher` in parallel (fresh context):
+**Skip check:** If `docs/exec-plans/active/<slug>/` already exists with a `pm-review.md` or `plan.md`, the user has likely already started this feature. Ask if they want to resume or start fresh. If resume, jump to the appropriate phase based on which artifacts exist.
+
+If not skipping, launch `scout` and `researcher` in parallel (fresh context). Use the `subagent` tool in PARALLEL mode:
 
 ```
 subagent({
@@ -32,13 +36,19 @@ subagent({
 
 ### Phase 2: CLARIFY (HARD GATE)
 
+**Skip check:** If you have already asked clarifying questions and the user has answered them (visible in conversation history), skip to Phase 3.
+
 Synthesize the GATHER findings. Then call the `interview` skill to ask clarifying questions. **Do not proceed past this gate until the human has answered all questions and is satisfied.** This is mandatory. If the human adds new constraints during clarification, incorporate them.
 
 Specifically: ask the user for the **plan slug** (e.g., `add-dark-mode`) — this becomes the directory name under `docs/exec-plans/active/<slug>/`.
 
 ### Phase 3: PM REVIEW
 
-Launch the `workflow.product-manager` agent (fresh context):
+**Skip check:** If `docs/exec-plans/active/<slug>/pm-review.md` exists and contains a clear Recommendation (GO, CLARIFY, or RETHINK), read it and act on that recommendation. Do NOT re-run the PM agent.
+
+If skipping: read the file, present the recommendation to the user. If GO, proceed to Phase 4. If CLARIFY, go back to Phase 2. If RETHINK, surface concerns and stop.
+
+If not skipping, launch the `workflow.product-manager` agent (fresh context). Use the `subagent` tool in SINGLE mode:
 
 ```
 subagent({
@@ -47,11 +57,13 @@ subagent({
 })
 ```
 
-Read the resulting `docs/exec-plans/active/<slug>/pm-review.md`. If the PM recommends CLARIFY, go back to Phase 2 with the open questions. If RETHINK, surface concerns to human and stop. If GO, proceed.
-
 ### Phase 4: SPEC
 
-Launch the `workflow.spec-writer` agent (fresh context):
+**Skip check:** If `docs/exec-plans/active/<slug>/plan.md` exists and the user has already approved it (visible in conversation history), proceed to Phase 5.
+
+If skipping: present a brief summary of the plan to confirm, then proceed to Phase 5.
+
+If not skipping, launch the `workflow.spec-writer` agent (fresh context). Use the `subagent` tool in SINGLE mode:
 
 ```
 subagent({
@@ -64,7 +76,11 @@ Read the resulting plan. Present a brief summary to the human. If the human appr
 
 ### Phase 5: IMPLEMENT
 
-Launch the `worker` agent (forked context):
+**Skip check:** If `docs/exec-plans/active/<slug>/PROGRESS.md` exists, the stop-guard extension handles worker resumption. Let it run. Do NOT launch a new worker unless the file is missing or says `STATUS: COMPLETE`.
+
+If skipping: Check PROGRESS.md status. If COMPLETE, proceed to Phase 6. If IN_PROGRESS, the stop-guard will resume the worker automatically — wait for it. If BLOCKED, surface the block to the user.
+
+If not skipping, launch the `worker` agent (forked context). Use the `subagent` tool in SINGLE mode:
 
 ```
 subagent({
@@ -77,7 +93,11 @@ The stop-guard extension will auto-resume if the worker stops prematurely. Let i
 
 ### Phase 6: REVIEW
 
-Launch 3× `reviewer` agents in parallel (fresh context):
+**Skip check:** If you have already synthesized review findings and the user has approved/disapproved the fix list (visible in conversation history), proceed based on that decision.
+
+If skipping: If fixes were approved and applied, proceed to Phase 7 or loop back to Phase 6 for re-review. If no fixes needed, proceed to Phase 8.
+
+If not skipping, launch 3× `reviewer` agents in parallel (fresh context). Use the `subagent` tool in PARALLEL mode:
 
 ```
 subagent({
@@ -110,7 +130,7 @@ Read all review findings. Categorize into:
 - **(b) Optional improvements** — style, naming, minor refactors
 - **(c) Feedback to ignore/defer** — out of scope, stylistic disagreement
 
-If (a) is non-empty, launch worker for fixes:
+If (a) is non-empty and you have not already launched a fix worker for this review round, launch worker for fixes. Use the `subagent` tool in SINGLE mode:
 
 ```
 subagent({
@@ -119,9 +139,13 @@ subagent({
 })
 ```
 
-If fixes were applied, verify and proceed to Phase 8. If fixes were non-trivial, loop back to Phase 6 for re-review.
+If fixes were applied and this is the first fix round, loop back to Phase 6 for re-review. If this is the second or later fix round, proceed to Phase 8 to avoid infinite loops.
 
 ### Phase 8: FINALIZE
+
+**Skip check:** If `docs/exec-plans/completed/<slug>/summary.md` exists, the feature is already finalized. Report completion to the user and stop.
+
+If not skipping:
 
 1. If this is a git repo, open a PR via `gh pr create`
 2. Move the plan directory: `mv docs/exec-plans/active/<slug> docs/exec-plans/completed/<slug>`

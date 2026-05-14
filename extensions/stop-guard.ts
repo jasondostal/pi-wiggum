@@ -31,13 +31,19 @@ export default function (pi: ExtensionAPI) {
   let state = defaultState();
 
   pi.on("session_start", async (_event, ctx) => {
-    for (const entry of ctx.sessionManager.getEntries()) {
+    // Read the LAST matching entry so we always use the freshest state
+    const entries = ctx.sessionManager.getEntries();
+    let latestState: StopGuardState | undefined;
+    for (const entry of entries) {
       if (entry.type === "custom" && entry.customType === STOP_GUARD_TYPE) {
         const data = entry.data as StopGuardState | undefined;
         if (data && data.plans) {
-          state = data;
+          latestState = data;
         }
       }
+    }
+    if (latestState) {
+      state = latestState;
     }
   });
 
@@ -48,9 +54,9 @@ export default function (pi: ExtensionAPI) {
 
     // Find all PROGRESS.md files for active plans
     const findResult = await pi.exec("find", [
+      "-maxdepth", "3",
       "docs/exec-plans/active",
       "-name", "PROGRESS.md",
-      "-maxdepth", "3",
     ], { timeout: 5000 });
 
     if (findResult.code !== 0 || !findResult.stdout.trim()) return;

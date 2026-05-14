@@ -6,7 +6,14 @@ Agents clarify, plan, implement, review, fix, and iterate. Humans steer. The rep
 
 ## Status
 
-**Infrastructure ready.** Custom agents (PM, spec-writer, doc-gardener), stop-guard extension, and `/wiggum` prompt template are built. Cron jobs configured. Awaiting first dogfooding run.
+**Bootstrap complete.** The Wiggum loop infrastructure is built, reviewed, and ready for dogfooding. Custom agents (PM, spec-writer, doc-gardener), stop-guard extension, and `/wiggum` prompt template are installed. Cron jobs configured. See [docs/exec-plans/completed/pi-wiggum-bootstrap/summary.md](docs/exec-plans/completed/pi-wiggum-bootstrap/summary.md) for full bootstrap summary.
+
+## Quick Start
+
+1. Install: `pi install npm:pi-wiggum`
+2. Install deps: `pi install npm:pi-subagents`, `pi install npm:pi-intercom`
+3. Authenticate: `gh auth login`
+4. Run: `/wiggum "build dark mode"` (or whatever feature)
 
 ## Architecture
 
