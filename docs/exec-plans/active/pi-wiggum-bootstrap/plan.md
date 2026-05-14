@@ -6,7 +6,7 @@ Build a Ralph Wiggum loop on pi — an autonomous agentic software development w
 
 ## Status
 
-STATUS: READY — awaiting implementation
+STATUS: IN_PROGRESS — infrastructure built, awaiting first loop run
 
 ## Architecture
 
