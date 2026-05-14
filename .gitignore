@@ -1,0 +1,5 @@
+.pi/
+.sessions/
+.DS_Store
+node_modules/
+*.jsonl
