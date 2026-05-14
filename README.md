@@ -13,9 +13,19 @@ Agents clarify, plan, implement, review, fix, and iterate. Humans steer. The rep
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full loop design.
 See [AGENTS.md](AGENTS.md) for the repository map.
 
-## Setup
+## Install
 
-### Install Dependencies
+```bash
+pi install npm:pi-wiggum
+```
+
+Or from git:
+
+```bash
+pi install git:github.com/jasondostal/pi-wiggum
+```
+
+### Dependencies
 
 - [pi-coding-agent](https://github.com/badlogic/pi-coding-agent)
 - pi-subagents — `pi install npm:pi-subagents`
