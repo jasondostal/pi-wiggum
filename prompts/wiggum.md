@@ -11,9 +11,26 @@ Run these phases in order. Each phase must complete before the next begins.
 
 **Before starting each phase, check for existing artifacts from that phase.** If a phase's expected output already exists and is valid, skip that phase and proceed. This makes the loop idempotent — safe to resume after session interruption.
 
-### Phase 1: GATHER
+### Phase 0: CLARIFY (HARD GATE)
+
+**Purpose:** Ground the human's request BEFORE any agents run. The orchestrator (you) does a quick back-and-forth to understand what the human actually wants.
+
+**Rules:**
+- Ask 1–3 targeted questions. Do NOT launch scout, researcher, or any other agent yet.
+- If the human already has a complete plan or spec written, ask for the **plan slug** (e.g., `add-dark-mode`) and confirm which phase to start from.
+- If the request is vague, ask what outcome they want, what constraints exist, and what "done" looks like.
+- Do NOT proceed past this gate until the human has answered and is satisfied.
+
+**Conditional GATHER decision:** After clarification, decide if GATHER is needed:
+- If the human provided a complete spec/plan → skip Phase 1, jump to Phase 3 (PM REVIEW) or Phase 4 (SPEC).
+- If the human needs codebase exploration or external research to proceed → run Phase 1.
+- If you're unsure → ask the human: "Do you want me to scout the codebase and research this, or do you have enough context to plan directly?"
+
+### Phase 1: GATHER (CONDITIONAL)
 
 **Skip check:** If `docs/exec-plans/active/<slug>/` already exists with a `pm-review.md` or `plan.md`, the user has likely already started this feature. Ask if they want to resume or start fresh. If resume, jump to the appropriate phase based on which artifacts exist.
+
+**Skip check:** If Phase 0 revealed the human already has full context (complete spec, no research needed), skip to Phase 3.
 
 If not skipping, launch `scout` and `researcher` in parallel (fresh context). Use the `subagent` tool in PARALLEL mode:
 
@@ -34,26 +51,29 @@ subagent({
 })
 ```
 
-### Phase 2: CLARIFY (HARD GATE)
+### Phase 2: SYNTHESIZE (POST-GATHER)
 
-**Skip check:** If you have already asked clarifying questions and the user has answered them (visible in conversation history), skip to Phase 3.
+**Skip check:** If Phase 1 was skipped (human had full context), skip to Phase 3.
 
-Synthesize the GATHER findings. Then call the `interview` skill to ask clarifying questions. **Do not proceed past this gate until the human has answered all questions and is satisfied.** This is mandatory. If the human adds new constraints during clarification, incorporate them.
+Synthesize the GATHER findings into a concise context brief. Present to the human:
+- What the scout found (relevant files, patterns, integration points)
+- What the researcher found (best practices, prior art, source links)
+- Any gaps or contradictions between the two
 
-Specifically: ask the user for the **plan slug** (e.g., `add-dark-mode`) — this becomes the directory name under `docs/exec-plans/active/<slug>/`.
+This is a lightweight synthesis — do NOT write a full plan. The PM and spec-writer handle that.
 
 ### Phase 3: PM REVIEW
 
 **Skip check:** If `docs/exec-plans/active/<slug>/pm-review.md` exists and contains a clear Recommendation (GO, CLARIFY, or RETHINK), read it and act on that recommendation. Do NOT re-run the PM agent.
 
-If skipping: read the file, present the recommendation to the user. If GO, proceed to Phase 4. If CLARIFY, go back to Phase 2. If RETHINK, surface concerns and stop.
+If skipping: read the file, present the recommendation to the user. If GO, proceed to Phase 4. If CLARIFY, go back to Phase 0. If RETHINK, surface concerns and stop.
 
 If not skipping, launch the `workflow.product-manager` agent (fresh context). Use the `subagent` tool in SINGLE mode:
 
 ```
 subagent({
   agent: "workflow.product-manager",
-  task: "Review requirements for: $@\n\nClarified requirements (from Phase 2):\n<insert clarification answers>\n\nSlug: <slug>\n\nOutput: docs/exec-plans/active/<slug>/pm-review.md\n\nRead ARCHITECTURE.md and docs/design-docs/core-beliefs.md for project constraints. Scout relevant code areas to ground your review in reality."
+  task: "Review requirements for: $@\n\nClarified requirements (from Phase 0):\n<insert clarification answers>\n\nSlug: <slug>\n\nOutput: docs/exec-plans/active/<slug>/pm-review.md\n\nRead ARCHITECTURE.md and docs/design-docs/core-beliefs.md for project constraints. Scout relevant code areas to ground your review in reality."
 })
 ```
 
@@ -157,8 +177,8 @@ If not skipping:
 
 ## Phase Gate Contract
 
-- NEVER skip Phase 2 (clarify). This is a hard gate.
-- If PM review surfaces new questions, go back to Phase 2.
+- NEVER skip Phase 0 (clarify). This is a hard gate.
+- If PM review surfaces new questions, go back to Phase 0.
 - If review finds issues requiring human judgment, pause and ask via intercom.
 - After Phase 8, report: what shipped, what was deferred, PR link if applicable.
 
