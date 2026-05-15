@@ -2,7 +2,6 @@
 name: doc-gardener
 package: wiggum
 description: Scans docs/ for staleness and drift, flags issues, commits fixes directly. Runs on cron via pi --session wiggum-gardener.
-model: deepseek/deepseek-chat
 thinking: high
 tools: read, grep, find, ls, bash, write, edit
 systemPromptMode: replace

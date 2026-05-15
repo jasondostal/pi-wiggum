@@ -15,22 +15,46 @@ Run these phases in order. Each phase must complete before the next begins.
 
 **Purpose:** Ground the human's request BEFORE any agents run. The orchestrator (you) does a quick back-and-forth to understand what the human actually wants.
 
-**Rules:**
+**Step 0a — Resume detection (do this FIRST):**
+
+Before asking any clarifying questions, run a quick check:
+
+```bash
+ls docs/exec-plans/active/ 2>/dev/null
+```
+
+If one or more slugs exist:
+- List them to the human and ask: "I see active plans: `<slug1>`, `<slug2>`. Are you resuming one of these, starting a new feature, or working on something unrelated?"
+- If RESUMING: ask which slug. Identify the latest artifact (`PROGRESS.md`, `plan.md`, `pm-review.md`) and jump to the appropriate phase (Phase 5 if PROGRESS.md exists, Phase 4 if plan.md exists and worker hasn't started, Phase 3 if only pm-review.md exists).
+- If NEW or UNRELATED: continue to Step 0b. The new work will get its own slug below.
+
+If no active slugs exist, proceed directly to Step 0b.
+
+**Step 0b — Clarifying questions:**
+
 - Ask 1–3 targeted questions. Do NOT launch scout, researcher, or any other agent yet.
-- If the human already has a complete plan or spec written, ask for the **plan slug** (e.g., `add-dark-mode`) and confirm which phase to start from.
 - If the request is vague, ask what outcome they want, what constraints exist, and what "done" looks like.
+- If the human references a complete spec/plan/doc, ask for the path and confirm what's in it.
 - Do NOT proceed past this gate until the human has answered and is satisfied.
 
-**Conditional GATHER decision:** After clarification, decide if GATHER is needed:
-- If the human provided a complete spec/plan → skip Phase 1, jump to Phase 3 (PM REVIEW) or Phase 4 (SPEC).
+**Step 0c — Slug (ALWAYS ask, before leaving Phase 0):**
+
+After clarification settles, **always** ask the human for the plan slug:
+
+> "What slug should we use for this work? (e.g., `add-dark-mode`, `bitemporal-memory`). This becomes the directory name under `docs/exec-plans/active/<slug>/`."
+
+Wait for the slug. Do not proceed without it. Validate that it's kebab-case and not already taken under `docs/exec-plans/`.
+
+**Step 0d — Conditional GATHER decision:**
+
+After clarification and slug are settled, decide if GATHER is needed:
+- If the human provided a complete spec/plan they want followed → skip Phase 1, jump to Phase 3 (PM REVIEW) if no pm-review.md exists yet, or Phase 4 (SPEC) if pm-review.md exists.
 - If the human needs codebase exploration or external research to proceed → run Phase 1.
 - If you're unsure → ask the human: "Do you want me to scout the codebase and research this, or do you have enough context to plan directly?"
 
 ### Phase 1: GATHER (CONDITIONAL)
 
-**Skip check:** If `docs/exec-plans/active/<slug>/` already exists with a `pm-review.md` or `plan.md`, the user has likely already started this feature. Ask if they want to resume or start fresh. If resume, jump to the appropriate phase based on which artifacts exist.
-
-**Skip check:** If Phase 0 revealed the human already has full context (complete spec, no research needed), skip to Phase 3.
+**Skip check:** Resume detection is handled in Phase 0 (Step 0a). If you reach Phase 1, the slug is either new or the human chose "start fresh." If Phase 0 Step 0d decided to skip GATHER (human has full context), skip to Phase 3.
 
 If not skipping, launch `scout` and `researcher` in parallel (fresh context). Use the `subagent` tool in PARALLEL mode:
 
@@ -51,22 +75,32 @@ subagent({
 })
 ```
 
-### Phase 2: SYNTHESIZE (POST-GATHER)
+### Phase 2: SYNTHESIZE (POST-GATHER, INFO-ONLY)
 
 **Skip check:** If Phase 1 was skipped (human had full context), skip to Phase 3.
 
-Synthesize the GATHER findings into a concise context brief. Present to the human:
+Synthesize the GATHER findings into a concise context brief. **Present it to the human as a context-share, then proceed automatically to Phase 3 — do NOT wait for explicit approval.** Phase 0 already covered consent; Phase 4 has the plan-approval gate. This is information flow, not a checkpoint.
+
+Include:
 - What the scout found (relevant files, patterns, integration points)
 - What the researcher found (best practices, prior art, source links)
 - Any gaps or contradictions between the two
 
-This is a lightweight synthesis — do NOT write a full plan. The PM and spec-writer handle that.
+This is a lightweight synthesis — do NOT write a full plan. The PM and spec-writer handle that. After presenting, immediately launch Phase 3.
 
 ### Phase 3: PM REVIEW
 
-**Skip check:** If `docs/exec-plans/active/<slug>/pm-review.md` exists and contains a clear Recommendation (GO, CLARIFY, or RETHINK), read it and act on that recommendation. Do NOT re-run the PM agent.
+**Skip check:** If `docs/exec-plans/active/<slug>/pm-review.md` exists and contains a clear Recommendation (GO or RETHINK), read it and act on that recommendation. Do NOT re-run the PM agent.
 
-If skipping: read the file, present the recommendation to the user. If GO, proceed to Phase 4. If CLARIFY, go back to Phase 0. If RETHINK, surface concerns and stop.
+If skipping: read the file, present the recommendation to the user.
+- If **GO**, proceed to Phase 4.
+- If **RETHINK**, surface concerns to the human and stop.
+- If **CLARIFY**: this means the existing pm-review.md is asking for more human input. **Archive the stale review** before routing back to Phase 0, otherwise the skip-check will loop forever:
+  ```bash
+  mv docs/exec-plans/active/<slug>/pm-review.md \
+     docs/exec-plans/active/<slug>/pm-review.archived-$(date +%Y%m%d-%H%M%S).md
+  ```
+  Then go back to Phase 0 with the CLARIFY questions from the archived review as the agenda. When Phase 3 re-runs, the absence of pm-review.md will force a fresh PM agent run with the new clarifications in context.
 
 If not skipping, launch the `workflow.product-manager` agent (fresh context). Use the `subagent` tool in SINGLE mode:
 
