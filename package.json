@@ -1,6 +1,6 @@
 {
   "name": "pi-wiggum",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Ralph Wiggum loop for pi — autonomous agentic software development workflow. Agents clarify, plan, implement, review, fix, and iterate.",
   "keywords": ["pi-package", "workflow", "agentic", "development", "wiggum"],
   "repository": "github:jasondostal/pi-wiggum",
