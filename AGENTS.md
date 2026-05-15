@@ -8,8 +8,8 @@ This file is a **map**, not an encyclopedia. It tells agents where to look.
 |------|-------|
 | Architecture & loop design | `ARCHITECTURE.md` |
 | Core principles | `docs/design-docs/core-beliefs.md` |
-| Active work plans | `docs/exec-plans/active/` |
-| Completed work | `docs/exec-plans/completed/` |
+| Active work plans | `docs/exec-plans/active/<slug>/` |
+| Completed work | `docs/exec-plans/completed/<slug>/` |
 | Product specs | `docs/product-specs/` |
 | Technical debt | `docs/exec-plans/tech-debt-tracker.md` |
 | Reference docs (LLM-friendly) | `docs/references/` |
@@ -17,18 +17,18 @@ This file is a **map**, not an encyclopedia. It tells agents where to look.
 
 ## How This Repo Works
 
-This is a **pi-native agentic workflow repository**. All code, documentation, and tooling is produced by pi agents under human direction. Humans steer — agents execute.
+This is a **pi-native agentic workflow repository**. All code, documentation, and tooling is produced by pi agents under human direction. The human has one substantive gate (the TPM conversation); agents execute everything after autonomously.
 
-The core workflow is the **Wiggum loop**: clarify → plan → implement → review → fix → loop. See `ARCHITECTURE.md` for full details.
+The core workflow is the **Wiggum loop** (v0.2.0+): TPM conversation → plan handoff → autonomous execution → PR. See `ARCHITECTURE.md` for full details.
 
 ### Key Rules for Agents
 
 1. Read `ARCHITECTURE.md` before starting any implementation work.
-2. All plans live in `docs/exec-plans/active/<slug>/`. Each plan directory contains:
-   - `pm-review.md` — PM review (requirements, gaps, acceptance criteria)
-   - `plan.md` — Implementation plan
-   - `PROGRESS.md` — Worker progress log with STATUS tag
-3. Workers write `PROGRESS.md` with `STATUS: IN_PROGRESS` while working and `STATUS: COMPLETE` when done. Use `BLOCKED: NEEDS_DECISION` when requiring human input.
-4. Never ask "should I continue?" — the answer is always yes.
-5. Use `gh` CLI for PR management. It is installed and authenticated.
-6. Respect the stop-guard extension — it will re-fire you if you stop prematurely.
+2. Each plan dir under `docs/exec-plans/active/<slug>/` contains:
+   - `plan.md` — the approved plan (its existence triggers execution mode)
+   - `PROGRESS.md` — worker progress log with STATUS tag
+   - `.escalate` (when present) — hard block; human intervention required
+3. Workers write `PROGRESS.md` with `STATUS: IN_PROGRESS` while working and `STATUS: COMPLETE` when done. Use `BLOCKED: NEEDS_DECISION` only for true hard blocks the plan does not cover.
+4. **Never ask "should I continue?"** — the answer is always yes. The stop-guard will re-fire you on every stop.
+5. **Plan mode is sacred.** While a slug exists without `plan.md`, code edits and execution-flavored subagents are hard-blocked by the plan-mode-guard extension. Don't try to work around it.
+6. Use `gh` CLI for PR management. It is installed and authenticated.

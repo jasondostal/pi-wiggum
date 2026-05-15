@@ -2,80 +2,82 @@
 
 ## What This Is
 
-pi-wiggum is a pi-native agentic software development workflow. It implements a Ralph Wiggum loop — a self-correcting agent pipeline where the orchestrator clarifies with the human, then plans, implements, reviews, fixes, and iterates until completion. Humans steer at named gates. Agents execute everything else. The repository is the system of record.
+pi-wiggum is a pi-native agentic software development workflow. The human has one substantive conversation upfront with a Technical Product Manager (the lead orchestrator LLM); the loop then executes autonomously to a finished PR. The repository is the system of record.
 
-The loop is **clarify-first**: every `/wiggum` invocation starts with a hard gate where the orchestrator asks 1–3 questions and confirms a plan slug before any subagent runs. No work begins on assumptions.
+The design principle is **front-load humans, then walk away**. The TPM conversation is the only human gate. After plan handoff, the loop has no checkpoints — the orchestrator is forbidden from asking "what next?" and the stop-guard re-fires it on every stop until completion.
 
-## The Wiggum Loop (v2 — clarify-first)
+## The Wiggum Loop (v0.2.0 — plan/execution split)
 
 ```
-/wiggum "build X feature"
+/wiggum "feature"
   │
-  ├─ 0. CLARIFY    → orchestrator asks 1–3 questions + slug (HARD GATE — human required)
-  │                 ├─ Step 0a: detect existing active plans → resume vs new
-  │                 ├─ Step 0b: clarifying questions
-  │                 ├─ Step 0c: always ask for slug
-  │                 └─ Step 0d: decide if GATHER is needed
+  ├─ PLAN MODE  (human engaged) ─────────────────────────────────
+  │  TPM has open conversation with human.
+  │  Allowed: Read tools, scout + researcher subagents,
+  │           read-only bash, conversation.
+  │  Blocked: code edits, mutating bash, all other subagents
+  │           (enforced by plan-mode-guard extension).
+  │  Conversation ends when human signals approval, TPM presents
+  │  final plan, human confirms once more, TPM writes plan.md.
   │
-  ├─ 1. GATHER     → scout + researcher (parallel, fresh context) — CONDITIONAL
-  ├─ 2. SYNTHESIZE → context-share to human, then auto-proceed (info-only, no gate)
-  ├─ 3. PM REVIEW  → workflow.product-manager → pm-review.md
-  │                 (CLARIFY recommendation archives stale review and routes to Phase 0)
-  ├─ 4. SPEC       → workflow.spec-writer → plan.md (plan-approval gate)
-  ├─ 5. IMPLEMENT  → worker → PROGRESS.md (stop-guard enforced)
-  ├─ 6. REVIEW     → 3× reviewer (parallel, fresh context)
-  ├─ 7. FIX        → worker (review synthesis) → loop to 6 if non-trivial
-  └─ 8. FINALIZE   → PR via gh, move to completed/, write summary
+  ├─ TRANSITION  (plan.md written) ──────────────────────────────
+  │  Plan mode ends. Execution mode begins. Human walks away.
+  │
+  └─ EXECUTION MODE  (autonomous, no gates) ─────────────────────
+     A. IMPLEMENT  — worker subagent, PROGRESS.md tracked
+     B. REVIEW     — 3× reviewer subagents in parallel (fresh ctx)
+     C. FIX        — worker applies category-(a) findings, loop to B once
+     D. FINALIZE   — gh pr create, move to completed/, summary.md
 ```
 
-**Human gates:** Phase 0 (clarify), Phase 4 (plan approval), and any escalation via stop-guard (3 retries at same checkpoint) or worker BLOCKED status. Phase 2 SYNTHESIZE is info-only and auto-proceeds.
+**The only legitimate stops in execution mode:**
 
-## Workflow Agents
+- `docs/exec-plans/active/<slug>/.escalate` — orchestrator or worker wrote a hard-block reason
+- `PROGRESS.md` `STATUS: BLOCKED:` — worker hit something the plan does not cover
+- Loop complete (moved to `completed/`)
 
-| Agent | Type | Role |
-|-------|------|------|
-| `scout` | Builtin | Fast codebase recon |
-| `researcher` | Builtin | External evidence gathering |
-| `workflow.product-manager` | Custom | Requirements review, gap analysis |
-| `workflow.spec-writer` | Custom | Implementation plan authoring |
-| `worker` | Builtin | Implementation (single writer) |
-| `reviewer` | Builtin | Code review (3 angles, fresh context) |
+Every other stop gets re-fired by the stop-guard.
 
-> **Note:** The `interview` builtin agent is available in `pi-subagents` but is NOT used by the default Wiggum loop. Phase 0 clarification is done by the orchestrator directly. The agent remains available for custom workflows.
+## Extensions
 
-## Continuous Work Enforcement
-
-Three-layer defense against agents stopping mid-work, applied at both worker and orchestrator scope:
-
-1. **Prompt design**
-   - Worker is prohibited from asking "should I continue?"
-   - Orchestrator is prohibited from asking "what next?" between phases — explicit autonomous-orchestrator rule at the top of `prompts/wiggum.md`.
-2. **Stop-guard extension** — hooks `agent_end`, two layers:
-   - **Worker layer:** reads `PROGRESS.md`, auto-re-fires on `STATUS: IN_PROGRESS` (max 3 retries at same checkpoint, then escalate).
-   - **Orchestrator layer:** reads `LOOP.md`, auto-re-fires the orchestrator on `STATUS: ACTIVE` (max 3 retries at same phase, then escalate). `AWAITING_HUMAN` / `BLOCKED` / `COMPLETE` are no-ops. Worker resume takes priority when both would fire.
-3. **Cron safety net** — 15min cron checks for stalled IN_PROGRESS plans, resumes via `pi -p --session`
+| Extension | Role |
+|-----------|------|
+| `extensions/stop-guard.ts` | Re-fires orchestrator and worker on stop. Plan mode suspends orchestrator re-firing entirely — TPM conversation is sacred. Worker layer (PROGRESS.md) is independent. Auto-escalates after 3 consecutive resumes with no mtime advance in the plan dir. |
+| `extensions/plan-mode-guard.ts` | Hooks `tool_call`. During plan mode (any active slug without plan.md), blocks code edits outside `docs/exec-plans/`, blocks mutating bash, blocks all subagents except researcher/scout. Returns to no-op once every active slug has plan.md. |
 
 ## Loop State Files
 
 | File | Scope | Writer | Read by |
 |------|-------|--------|---------|
-| `docs/exec-plans/active/<slug>/LOOP.md` | Orchestrator-level phase state | Orchestrator (every turn boundary) | Stop-guard orchestrator layer |
-| `docs/exec-plans/active/<slug>/PROGRESS.md` | Worker-level implementation state | Worker (Phase 5) | Stop-guard worker layer |
+| `docs/exec-plans/active/<slug>/plan.md` | The contract. Plan exists ⇒ execution mode is on. | TPM (at handoff) | Worker, reviewers, stop-guard, plan-mode-guard |
+| `docs/exec-plans/active/<slug>/PROGRESS.md` | Worker implementation state | Worker | Stop-guard worker layer |
+| `docs/exec-plans/active/<slug>/.escalate` | Hard block — human intervention required | Worker, orchestrator, or stop-guard (auto-stagnation) | Stop-guard |
+| `docs/exec-plans/completed/<slug>/summary.md` | Final loop output | Orchestrator (Phase D) | Humans |
 
-Both files use a `STATUS:` header so the stop-guard parses them uniformly. See `prompts/wiggum.md` for the LOOP.md schema and update-checklist table.
+There is **no orchestrator-level state file** (no LOOP.md). The plan dir itself is the state machine: dir exists + no plan.md = plan mode; plan.md exists = execution mode; dir moved to `completed/` = done.
+
+## Workflow Agents
+
+| Agent | Type | Used by loop | Role |
+|-------|------|--------------|------|
+| `scout` | Builtin | Plan mode | Fast codebase recon, returns summary |
+| `researcher` | Builtin | Plan mode | External evidence (docs, prior art) |
+| `worker` | Builtin | Execution Phase A & C | Implementation (single writer) |
+| `reviewer` | Builtin | Execution Phase B | Code review (3 angles, fresh context) |
+| `workflow.product-manager` | Custom | Not used (legacy from v0.1.x) | Available for manual invocation |
+| `workflow.spec-writer` | Custom | Not used (legacy from v0.1.x) | Available for manual invocation |
+| `wiggum.doc-gardener` | Custom | Not used (independent) | Documentation upkeep |
 
 ## Repository Knowledge Structure
 
 ```
-AGENTS.md                          # Map (this file's companion)
+AGENTS.md                          # Map
 ARCHITECTURE.md                    # This file
 docs/
 ├── design-docs/
-│   ├── index.md
-│   └── core-beliefs.md
 ├── exec-plans/
-│   ├── active/                    # Current work
-│   ├── completed/                 # Done work
+│   ├── active/<slug>/             # In flight (plan or execution)
+│   ├── completed/<slug>/          # Done
 │   └── tech-debt-tracker.md
 ├── product-specs/
 ├── references/
@@ -87,4 +89,12 @@ docs/
 - pi-subagents — agent orchestration (chains, parallel, intercom, worktrees)
 - pi-intercom — agent-to-agent and agent-to-human communication
 - gh CLI — PR management (installed, authenticated)
-- Cron — background scheduling
+
+## Migration notes (from v0.1.x)
+
+- `LOOP.md` is gone. The orchestrator no longer tracks its own state in a file.
+- Phase 0 clarify gate is replaced by open TPM conversation (no turn cap).
+- Phase 3 PM review and Phase 4 spec are folded into TPM mode (the TPM is the PM and writes the plan itself).
+- Phase 4 plan-approval gate is folded into TPM mode (approval is intrinsic to ending the conversation).
+- Plan-mode tool restrictions are hard-enforced by the plan-mode-guard extension, not just by prompt.
+- Execution mode (Phases A–D, formerly 5–8) has no human gates and no STATUS field — the stop-guard fires on every stop unless `.escalate` or `PROGRESS BLOCKED` is set.
