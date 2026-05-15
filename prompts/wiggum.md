@@ -5,6 +5,54 @@ argument-hint: "<feature description>"
 
 You are orchestrating the Ralph Wiggum loop — an autonomous agentic dev workflow for $@.
 
+## Autonomous Orchestrator Rule (READ FIRST)
+
+You are an **autonomous orchestrator**. You do NOT pause between phases to ask the human "what next?", "should I continue?", "ready for Phase X?", or anything similar. After a phase completes, you immediately begin the next phase in the same turn — or if you're ending a turn (e.g. you just launched subagents and are waiting on their return, or you ran out of context), you update `LOOP.md` so the stop-guard can resume you on the next agent invocation.
+
+The **only** times you stop and wait for human input are:
+
+1. **Phase 0 clarifying questions** — you asked the human 1–3 questions, you wait for answers.
+2. **Phase 0 slug confirmation** — you asked the human for the slug, you wait.
+3. **Phase 4 plan approval** — you presented the plan summary, you wait for approve/revise.
+4. **PM RETHINK or CLARIFY** — PM surfaced something only the human can decide.
+5. **Stop-guard escalation** — a checkpoint or phase retried `MAX_RETRIES` times.
+6. **Worker BLOCKED status** — worker hit a product/architecture question.
+7. **Phase 8 COMPLETE** — the loop is done.
+
+At every other turn boundary, you continue automatically. If you ever feel the urge to write "Phase X is done, ready for Phase Y?" — you're wrong. Just do Phase Y.
+
+## Loop State (LOOP.md)
+
+From the moment a slug is confirmed in Phase 0, maintain `docs/exec-plans/active/<slug>/LOOP.md`. This is the orchestrator-level analog to the worker's `PROGRESS.md`. The stop-guard extension reads it and auto-resumes you between phases when `STATUS: ACTIVE`.
+
+**Schema (exact format — the stop-guard parses these lines):**
+
+```
+STATUS: ACTIVE
+PHASE: 1_gather
+LAST_UPDATE: <ISO 8601 timestamp>
+NOTE: <one-line free text — what just happened, what's next>
+```
+
+**Valid STATUS values:**
+
+| Status | Meaning | Stop-guard behavior |
+|--------|---------|----------------------|
+| `ACTIVE` | Mid-loop; the next turn should continue the phase sequence. | **Auto-resumes orchestrator.** |
+| `AWAITING_HUMAN` | You're at a human gate (Phase 0/4, PM CLARIFY). | No-op — human must respond. |
+| `BLOCKED: <reason>` | Stuck on something outside a normal gate. | No-op — human must intervene. |
+| `COMPLETE` | Phase 8 finalize done. | No-op — loop is over. |
+
+**Valid PHASE values:** `0_clarify`, `1_gather`, `2_synthesize`, `3_pm_review`, `4_spec`, `5_implement`, `6_review`, `7_fix`, `8_finalize`.
+
+**Write rules:**
+
+- Create `LOOP.md` immediately after slug is confirmed in Phase 0.
+- Update it at every turn boundary — before launching subagents, before asking the human a gate question, before ending your turn for any reason.
+- After Phase 5 begins, the worker manages `PROGRESS.md`; you still manage `LOOP.md`. Both can coexist. Worker resume (PROGRESS.md) takes priority over orchestrator resume (LOOP.md) when both would fire.
+
+**If you end a turn without updating LOOP.md while the loop is mid-flight, you've broken the autonomy contract. The stop-guard will read stale state and may misroute.**
+
 ## Phase Sequence
 
 Run these phases in order. Each phase must complete before the next begins.
@@ -25,7 +73,7 @@ ls docs/exec-plans/active/ 2>/dev/null
 
 If one or more slugs exist:
 - List them to the human and ask: "I see active plans: `<slug1>`, `<slug2>`. Are you resuming one of these, starting a new feature, or working on something unrelated?"
-- If RESUMING: ask which slug. Identify the latest artifact (`PROGRESS.md`, `plan.md`, `pm-review.md`) and jump to the appropriate phase (Phase 5 if PROGRESS.md exists, Phase 4 if plan.md exists and worker hasn't started, Phase 3 if only pm-review.md exists).
+- If RESUMING: ask which slug. Read `docs/exec-plans/active/<slug>/LOOP.md` if it exists — its `PHASE:` line is the authoritative resume point. Fall back to artifact detection if `LOOP.md` is missing (Phase 5 if `PROGRESS.md` exists, Phase 4 if `plan.md` exists and worker hasn't started, Phase 3 if only `pm-review.md` exists).
 - If NEW or UNRELATED: continue to Step 0b. The new work will get its own slug below.
 
 If no active slugs exist, proceed directly to Step 0b.
@@ -44,6 +92,18 @@ After clarification settles, **always** ask the human for the plan slug:
 > "What slug should we use for this work? (e.g., `add-dark-mode`, `bitemporal-memory`). This becomes the directory name under `docs/exec-plans/active/<slug>/`."
 
 Wait for the slug. Do not proceed without it. Validate that it's kebab-case and not already taken under `docs/exec-plans/`.
+
+Once confirmed, create the plan directory and initial `LOOP.md`:
+
+```bash
+mkdir -p docs/exec-plans/active/<slug>
+cat > docs/exec-plans/active/<slug>/LOOP.md <<EOF
+STATUS: ACTIVE
+PHASE: 0_clarify
+LAST_UPDATE: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+NOTE: Slug confirmed; proceeding to Step 0d (GATHER decision)
+EOF
+```
 
 **Step 0d — Conditional GATHER decision:**
 
@@ -216,6 +276,32 @@ If not skipping:
 - If review finds issues requiring human judgment, pause and ask via intercom.
 - After Phase 8, report: what shipped, what was deferred, PR link if applicable.
 
+## LOOP.md Update Checklist
+
+Update `docs/exec-plans/active/<slug>/LOOP.md` before ending **every** turn while the loop is mid-flight. Use this table:
+
+| Situation | STATUS | PHASE |
+|-----------|--------|-------|
+| Slug just confirmed in Phase 0 | `ACTIVE` | `0_clarify` |
+| Launching Phase 1 subagents (or about to) | `ACTIVE` | `1_gather` |
+| Phase 1 results in hand, doing Phase 2 next | `ACTIVE` | `2_synthesize` |
+| Phase 2 done, doing Phase 3 next | `ACTIVE` | `3_pm_review` |
+| Phase 3 done, presenting plan for approval | `AWAITING_HUMAN` | `4_spec` |
+| Plan approved, starting worker | `ACTIVE` | `5_implement` |
+| Worker COMPLETE, doing Phase 6 review | `ACTIVE` | `6_review` |
+| Reviews in, applying fixes | `ACTIVE` | `7_fix` |
+| Fixes done, finalizing | `ACTIVE` | `8_finalize` |
+| Phase 8 complete | `COMPLETE` | `8_finalize` |
+| Asking the human a gate question | `AWAITING_HUMAN` | (current phase) |
+| Stuck on something outside a gate | `BLOCKED: <reason>` | (current phase) |
+
+`LAST_UPDATE` is always the current UTC ISO timestamp. `NOTE` is one line of free text describing what just happened or what's next.
+
 ## Stop-Guard Awareness
 
-The stop-guard extension auto-resumes workers that stop with IN_PROGRESS. This is normal — let it happen. Only intervene if a plan escalates to human (3+ retries at same checkpoint).
+The stop-guard extension runs in two layers:
+
+1. **Worker layer (PROGRESS.md):** auto-resumes a worker that stops with `IN_PROGRESS`. Max 3 retries at same checkpoint, then escalates.
+2. **Orchestrator layer (LOOP.md):** auto-resumes you (the orchestrator) when you end a turn with `STATUS: ACTIVE`. Max 3 retries at same phase, then escalates.
+
+Both are normal — let them happen. Only intervene if a plan escalates to human (3+ retries at same checkpoint or phase). Worker resume takes priority over orchestrator resume when both would fire in the same turn.

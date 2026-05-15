@@ -45,11 +45,24 @@ The loop is **clarify-first**: every `/wiggum` invocation starts with a hard gat
 
 ## Continuous Work Enforcement
 
-Three-layer defense against agents stopping mid-work:
+Three-layer defense against agents stopping mid-work, applied at both worker and orchestrator scope:
 
-1. **Prompt design** — worker prohibited from asking "should I continue?"
-2. **Stop-guard extension** — hooks `agent_end`, reads PROGRESS.md, auto-re-fires on IN_PROGRESS (max 3 retries at same checkpoint, then escalate)
+1. **Prompt design**
+   - Worker is prohibited from asking "should I continue?"
+   - Orchestrator is prohibited from asking "what next?" between phases — explicit autonomous-orchestrator rule at the top of `prompts/wiggum.md`.
+2. **Stop-guard extension** — hooks `agent_end`, two layers:
+   - **Worker layer:** reads `PROGRESS.md`, auto-re-fires on `STATUS: IN_PROGRESS` (max 3 retries at same checkpoint, then escalate).
+   - **Orchestrator layer:** reads `LOOP.md`, auto-re-fires the orchestrator on `STATUS: ACTIVE` (max 3 retries at same phase, then escalate). `AWAITING_HUMAN` / `BLOCKED` / `COMPLETE` are no-ops. Worker resume takes priority when both would fire.
 3. **Cron safety net** — 15min cron checks for stalled IN_PROGRESS plans, resumes via `pi -p --session`
+
+## Loop State Files
+
+| File | Scope | Writer | Read by |
+|------|-------|--------|---------|
+| `docs/exec-plans/active/<slug>/LOOP.md` | Orchestrator-level phase state | Orchestrator (every turn boundary) | Stop-guard orchestrator layer |
+| `docs/exec-plans/active/<slug>/PROGRESS.md` | Worker-level implementation state | Worker (Phase 5) | Stop-guard worker layer |
+
+Both files use a `STATUS:` header so the stop-guard parses them uniformly. See `prompts/wiggum.md` for the LOOP.md schema and update-checklist table.
 
 ## Repository Knowledge Structure
 
