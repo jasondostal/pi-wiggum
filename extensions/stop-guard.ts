@@ -181,7 +181,7 @@ async function buildJudgePrompt(pi: ExtensionAPI, dir: string): Promise<string |
   const plan = (await readFile(pi, `${dir}/plan.md`)) ?? "(plan.md missing)";
   const progress = (await readFile(pi, `${dir}/PROGRESS.md`)) ?? "(no PROGRESS.md yet)";
   const status = await execText(pi, "git", ["status", "--short"]);
-  const diff = truncate(await execText(pi, "git", ["diff", "HEAD"]), DIFF_BUDGET);
+  const diff = await collectChanges(pi, DIFF_BUDGET);
   const commits = await execText(pi, "git", ["log", "--oneline", "-10"]);
 
   return [
@@ -358,6 +358,28 @@ async function readFile(pi: ExtensionAPI, path: string): Promise<string | null> 
 async function execText(pi: ExtensionAPI, cmd: string, args: string[]): Promise<string> {
   const res = await pi.exec(cmd, args, { timeout: 8000 });
   return res.code === 0 ? res.stdout.trim() : "";
+}
+
+/**
+ * Ground-truth changes for the judge: tracked diff vs HEAD PLUS the contents of
+ * untracked new files. `git diff HEAD` alone misses brand-new files, which is
+ * exactly what a fresh worker produces — without this the judge sees nothing.
+ * Read-only: no staging, no index mutation.
+ */
+async function collectChanges(pi: ExtensionAPI, budget: number): Promise<string> {
+  const tracked = await execText(pi, "git", ["diff", "HEAD"]);
+  const untracked = await execText(pi, "git", ["ls-files", "--others", "--exclude-standard"]);
+
+  let out = tracked;
+  if (untracked) {
+    out += "\n\n# Untracked new files (full contents):\n";
+    for (const f of untracked.split("\n").filter(Boolean)) {
+      if (out.length >= budget) break;
+      const content = (await readFile(pi, f)) ?? "(unreadable)";
+      out += `\n--- new file: ${f} ---\n${content}\n`;
+    }
+  }
+  return truncate(out, budget);
 }
 
 function truncate(s: string, max: number): string {
