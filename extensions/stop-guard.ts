@@ -173,9 +173,7 @@ async function runJudge(pi: ExtensionAPI, dir: string): Promise<Verdict | null> 
 }
 
 async function buildJudgePrompt(pi: ExtensionAPI, dir: string): Promise<string | null> {
-  const instructions =
-    (await readFile(pi, "prompts/judge.md")) ??
-    (await readFile(pi, "node_modules/pi-wiggum/prompts/judge.md"));
+  const instructions = await loadJudgeInstructions(pi);
   if (!instructions) return null;
 
   const plan = (await readFile(pi, `${dir}/plan.md`)) ?? "(plan.md missing)";
@@ -193,6 +191,30 @@ async function buildJudgePrompt(pi: ExtensionAPI, dir: string): Promise<string |
     "\n\n===== RECENT COMMITS =====\n", commits || "(none)",
     "\n\nNow output your verdict as a single JSON object and nothing else.",
   ].join("");
+}
+
+/**
+ * Locate prompts/judge.md robustly, regardless of how pi-wiggum was installed.
+ * Order: explicit env override → next to this extension (pkg/prompts/judge.md) →
+ * cwd (running inside the wiggum repo) → installed as a dependency.
+ */
+async function loadJudgeInstructions(pi: ExtensionAPI): Promise<string | null> {
+  const candidates: string[] = [];
+  const envPath = process.env.WIGGUM_JUDGE_PROMPT?.trim();
+  if (envPath) candidates.push(envPath);
+  try {
+    candidates.push(new URL("../prompts/judge.md", import.meta.url).pathname);
+  } catch {
+    /* import.meta.url unavailable under some loaders — fall through */
+  }
+  candidates.push("prompts/judge.md");
+  candidates.push("node_modules/pi-wiggum/prompts/judge.md");
+
+  for (const path of candidates) {
+    const text = await readFile(pi, path);
+    if (text) return text;
+  }
+  return null;
 }
 
 /** Tolerant verdict extraction: fenced ```json first, else last balanced {…}. */
