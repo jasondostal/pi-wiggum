@@ -4,9 +4,18 @@ A Ralph Wiggum loop for pi — autonomous agentic software development workflow.
 
 Agents clarify, plan, implement, review, fix, and iterate. Humans steer. The repository is the system of record.
 
+The loop is **evaluator-driven** (v0.3.0): when the worker stops, an independent LLM judge — a different model than the worker, modeled on Claude Code's `goal` feature — evaluates the actual diff against the plan's acceptance criteria and decides whether to continue (with a specific directive), redirect, finalize, or escalate. The worker can no longer end the loop by claiming `STATUS: COMPLETE`; completion is verified against the code.
+
 ## Status
 
-**Bootstrap complete.** The Wiggum loop infrastructure is built, reviewed, and ready for dogfooding. Custom agents (PM, spec-writer, doc-gardener), stop-guard extension, and `/wiggum` prompt template are installed. Cron jobs configured. See [docs/exec-plans/completed/pi-wiggum-bootstrap/summary.md](docs/exec-plans/completed/pi-wiggum-bootstrap/summary.md) for full bootstrap summary.
+**Evaluator-driven control (v0.3.0).** The stop-guard's old mechanical judgment (self-reported `STATUS:` string-match + mtime-stagnation) is replaced by an external LLM evaluator (`prompts/judge.md`, default model `xiaomi/mimo-v2.5-pro`). See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and [docs/exec-plans/completed/pi-wiggum-bootstrap/summary.md](docs/exec-plans/completed/pi-wiggum-bootstrap/summary.md) for the original bootstrap.
+
+### Configuration
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `WIGGUM_JUDGE_MODEL` | `xiaomi/mimo-v2.5-pro` | The evaluator model (any pi model id). Should differ from the worker model. |
+| `WIGGUM_PI_BIN` | `pi` | The pi binary the stop-guard shells out to for evaluation. |
 
 ## Quick Start
 

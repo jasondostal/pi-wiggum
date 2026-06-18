@@ -6,7 +6,7 @@ pi-wiggum is a pi-native agentic software development workflow. The human has on
 
 The design principle is **front-load humans, then walk away**. The TPM conversation is the only human gate. After plan handoff, the loop has no checkpoints — the orchestrator is forbidden from asking "what next?" and the stop-guard re-fires it on every stop until completion.
 
-## The Wiggum Loop (v0.2.0 — plan/execution split)
+## The Wiggum Loop (v0.3.0 — evaluator-driven control)
 
 ```
 /wiggum "feature"
@@ -23,27 +23,53 @@ The design principle is **front-load humans, then walk away**. The TPM conversat
   ├─ TRANSITION  (plan.md written) ──────────────────────────────
   │  Plan mode ends. Execution mode begins. Human walks away.
   │
-  └─ EXECUTION MODE  (autonomous, no gates) ─────────────────────
+  └─ EXECUTION MODE  (autonomous, evaluator-judged) ─────────────
      A. IMPLEMENT  — worker subagent, PROGRESS.md tracked
      B. REVIEW     — 3× reviewer subagents in parallel (fresh ctx)
      C. FIX        — worker applies category-(a) findings, loop to B once
      D. FINALIZE   — gh pr create, move to completed/, summary.md
+
+     On every stop, the stop-guard calls an EXTERNAL LLM EVALUATOR
+     (a different model than the worker) that judges the actual diff
+     against the plan's acceptance criteria and returns a verdict:
+        DONE      → direct the orchestrator to FINALIZE only
+        CONTINUE  → re-fire with the evaluator's next directive
+        REDIRECT  → re-fire with a corrective directive (drift caught)
+        BLOCKED   → write .escalate and stop for the human
 ```
 
-**The only legitimate stops in execution mode:**
+**What ends execution mode is the evaluator's judgment**, not a self-reported
+status string. The loop only stops on:
 
-- `docs/exec-plans/active/<slug>/.escalate` — orchestrator or worker wrote a hard-block reason
-- `PROGRESS.md` `STATUS: BLOCKED:` — worker hit something the plan does not cover
-- Loop complete (moved to `completed/`)
+- Evaluator verdict `DONE` → loop finalizes → slug moves to `completed/`
+- Evaluator verdict `BLOCKED`, or a `.escalate` file (manual or auto)
+- A hard backstop trips (iteration cap, or judge-unavailable stagnation)
 
-Every other stop gets re-fired by the stop-guard.
+The worker can no longer end the loop by writing `STATUS: COMPLETE` — the
+evaluator verifies completion against the diff. This is the core difference
+from v0.2.x, which trusted the worker's self-reported `STATUS:` string.
 
 ## Extensions
 
 | Extension | Role |
 |-----------|------|
-| `extensions/stop-guard.ts` | Re-fires orchestrator and worker on stop. Plan mode suspends orchestrator re-firing entirely — TPM conversation is sacred. Worker layer (PROGRESS.md) is independent. Auto-escalates after 3 consecutive resumes with no mtime advance in the plan dir. |
+| `extensions/stop-guard.ts` | Hooks `agent_end`. In execution mode, calls the external evaluator (`prompts/judge.md` + plan/diff/progress evidence) via a pinned `pi -p` subprocess, then acts on the verdict (DONE→finalize, CONTINUE/REDIRECT→re-fire with directive, BLOCKED→escalate). Plan mode suspends all auto-resumption — TPM conversation is sacred. Backstops: hard iteration cap (`ITER_CAP`), and a mechanical mtime-stagnation fallback when the judge is unavailable. |
 | `extensions/plan-mode-guard.ts` | Hooks `tool_call`. During plan mode (any active slug without plan.md), blocks code edits outside `docs/exec-plans/`, blocks mutating bash, blocks all subagents except researcher/scout. Returns to no-op once every active slug has plan.md. |
+
+### The evaluator (the "goal" judge)
+
+The evaluator is an **independent LLM judge**, modeled on Claude Code's `goal`
+feature. It is deliberately a *different* model than the worker so it brings
+fresh, skeptical eyes and won't rubber-stamp its own output.
+
+- **Prompt:** `prompts/judge.md` — the rubric-driven instructions + strict JSON
+  verdict schema `{ state, rationale, evidence[], next_directive, blocker }`.
+- **Model:** `WIGGUM_JUDGE_MODEL` env (default `xiaomi/mimo-v2.5-pro` — cheap,
+  direct, fast). Override to any pi model id.
+- **Evidence:** the stop-guard feeds it `plan.md` (the rubric), `PROGRESS.md`
+  (treated as an unverified claim), and the actual `git diff HEAD` + recent
+  commits (ground truth). The judge verifies completion against the diff.
+- **Binary:** invoked as `pi -p -nt --model <judge>` (`WIGGUM_PI_BIN` overrides).
 
 ## Loop State Files
 

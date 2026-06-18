@@ -65,8 +65,9 @@ A plan exists at `docs/exec-plans/active/<slug>/plan.md`, signed off by the huma
 
 ## Hard restrictions
 
-- **Never ask the human anything.** No "should I continue", no "is this OK", no "what next". The plan is your authority — execute it. The stop-guard will re-fire you on every stop with "continue executing." Skip the question, keep going.
-- **Only one legitimate escape:** if you hit something the plan genuinely does not cover and cannot decide (true architectural ambiguity, missing external dependency, etc.), write the reason to `docs/exec-plans/active/<slug>/.escalate` and stop. The human comes back, reads the file, fixes, removes it, the loop resumes.
+- **Never ask the human anything.** No "should I continue", no "is this OK", no "what next". The plan is your authority — execute it. When you stop, an external **evaluator** judges your work against the plan's acceptance criteria and re-fires you with a specific directive. Skip the question, keep going.
+- **You do not decide when the loop is done — the evaluator does.** Writing `STATUS: COMPLETE` is a signal to advance to review/finalize, not a way to end the loop. The evaluator verifies completion against the actual diff; if the criteria aren't met it will re-fire you with what's missing. Don't claim done you can't back with code.
+- **Only one legitimate self-escape:** if you hit something the plan genuinely does not cover and cannot decide (true architectural ambiguity, missing external dependency, etc.), write the reason to `docs/exec-plans/active/<slug>/.escalate` and stop. The human comes back, reads the file, fixes, removes it, the loop resumes.
 
 ## Phase A — IMPLEMENT
 
@@ -134,14 +135,19 @@ Execution is now complete. Report to the human (when they return): summary path 
 
 Each phase checks for its expected artifact. If PROGRESS.md `STATUS: COMPLETE` exists, skip Phase A. If a reviewer round has already run in your transcript or `.escalate` exists, act accordingly. If `summary.md` exists in `completed/<slug>/`, the loop is done.
 
-## Stop-guard awareness
+## Stop-guard awareness (evaluator-driven)
 
-The stop-guard has two layers:
+On every `agent_end` in execution mode, the stop-guard calls an **external LLM evaluator** (a different model than the worker, default mimo 2.5 pro direct). The evaluator reads `plan.md` (the rubric), your `PROGRESS.md` (as an unverified claim), and the real `git diff` (ground truth), then returns one verdict that decides what happens next:
 
-1. **Worker layer (PROGRESS.md):** re-fires the worker if it stops with IN_PROGRESS. Max 3 retries at same checkpoint, then escalates.
-2. **Orchestrator layer (active slug + plan.md exists + no `.escalate` + no PROGRESS BLOCKED):** re-fires *you* on every `agent_end`. Stops only on COMPLETE, `.escalate`, or BLOCKED. Stagnation (3 resumes with no mtime advance in the plan dir) auto-writes `.escalate`.
+- **CONTINUE / REDIRECT** → you are re-fired with the evaluator's `NEXT DIRECTIVE` embedded in the resume message. Do exactly that next, then keep going. REDIRECT means it caught you drifting from the plan or spinning — read the directive carefully.
+- **DONE** → you are re-fired to **finalize only** (PR, move to `completed/`, summary.md). Do not implement or re-review further.
+- **BLOCKED** → the evaluator writes `.escalate` for the human; the loop stops.
 
-Plan mode suspends orchestrator-layer auto-resumption entirely — the human owns the conversation. The instant `plan.md` is written, the guard takes over.
+You will see `EVALUATOR VERDICT: …` and `NEXT DIRECTIVE: …` at the top of each resume message. Treat the directive as authoritative course-correction — it is grounded in your actual diff.
+
+**Backstops under the evaluator:** a hard iteration cap, and — if the evaluator is unavailable — a mechanical mtime-stagnation fallback that escalates after repeated no-progress resumes. These exist only so the loop always terminates; the evaluator is the real brain.
+
+Plan mode suspends all auto-resumption entirely — the human owns the conversation. The instant `plan.md` is written, the guard takes over.
 
 ## Inactive legacy agents
 
