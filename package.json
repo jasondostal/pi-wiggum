@@ -1,12 +1,11 @@
 {
   "name": "pi-wiggum",
-  "version": "0.3.2",
-  "description": "Ralph Wiggum loop for pi — autonomous agentic software development workflow with an external LLM evaluator judging end state. Agents clarify, plan, implement, review, fix, and iterate.",
-  "keywords": ["pi-package", "workflow", "agentic", "development", "wiggum"],
+  "version": "0.4.0",
+  "description": "A goal plugin for pi — state a goal, an external LLM judge evaluates progress and re-fires until it's met.",
+  "keywords": ["pi-package", "goal", "agentic", "workflow", "evaluator", "wiggum"],
   "repository": "github:jasondostal/pi-wiggum",
   "license": "MIT",
   "peerDependencies": {
-    "pi-subagents": "*",
     "@earendil-works/pi-coding-agent": "*"
   }
 }

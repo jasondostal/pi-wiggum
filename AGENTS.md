@@ -1,34 +1,36 @@
 # AGENTS.md — pi-wiggum
 
-This file is a **map**, not an encyclopedia. It tells agents where to look.
+This file is a **map**, not an encyclopedia.
 
-## Where to Find Things
+## What this is
+
+pi-wiggum is a **goal plugin for pi**, modeled on Claude Code's `goal` feature.
+You set a goal; you pursue it directly; an external LLM evaluator (a different
+model) judges your work after each stop and re-fires you with a directive until
+the goal is met. No planning phase, no subagents.
+
+## Where to find things
 
 | What | Where |
 |------|-------|
 | Architecture & loop design | `ARCHITECTURE.md` |
+| The goal loop (extension) | `extensions/goal-guard.ts` |
+| The evaluator prompt (rubric + verdict schema) | `prompts/judge.md` |
+| The `/goal` command | `prompts/goal.md` |
 | Core principles | `docs/design-docs/core-beliefs.md` |
-| Active work plans | `docs/exec-plans/active/<slug>/` |
-| Completed work | `docs/exec-plans/completed/<slug>/` |
-| Product specs | `docs/product-specs/` |
-| Technical debt | `docs/exec-plans/tech-debt-tracker.md` |
-| Reference docs (LLM-friendly) | `docs/references/` |
-| Auto-generated artifacts | `docs/generated/` |
+| History (v0.1–0.3 bootstrap) | `docs/exec-plans/completed/` |
 
-## How This Repo Works
+## How the loop works
 
-This is a **pi-native agentic workflow repository**. All code, documentation, and tooling is produced by pi agents under human direction. The human has one substantive gate (the TPM conversation); agents execute everything after autonomously.
+1. `/goal "<goal>"` → you write `.wiggum/goal.md` (goal + **acceptance criteria**).
+2. You work toward it directly with your tools. Never ask "should I continue?".
+3. On each stop, `goal-guard` runs the evaluator (`prompts/judge.md`) against
+   `.wiggum/goal.md` + your actual `git diff` + new files, and acts on the verdict:
+   - **CONTINUE / REDIRECT** → re-fires you with a `NEXT DIRECTIVE`.
+   - **DONE** → archives the goal to `.wiggum/completed/`; loop ends.
+   - **BLOCKED** → writes `.wiggum/.escalate`; loop stops for the human.
+4. Backstops: a hard iteration cap, and a mechanical mtime fallback if the
+   evaluator is unavailable. These only guarantee termination.
 
-The core workflow is the **Wiggum loop** (v0.2.0+): TPM conversation → plan handoff → autonomous execution → PR. See `ARCHITECTURE.md` for full details.
-
-### Key Rules for Agents
-
-1. Read `ARCHITECTURE.md` before starting any implementation work.
-2. Each plan dir under `docs/exec-plans/active/<slug>/` contains:
-   - `plan.md` — the approved plan (its existence triggers execution mode)
-   - `PROGRESS.md` — worker progress log with STATUS tag
-   - `.escalate` (when present) — hard block; human intervention required
-3. Workers write `PROGRESS.md` with `STATUS: IN_PROGRESS` while working and `STATUS: COMPLETE` when done. Use `BLOCKED: NEEDS_DECISION` only for true hard blocks the plan does not cover.
-4. **Never ask "should I continue?"** — the answer is always yes. The stop-guard will re-fire you on every stop.
-5. **Plan mode is sacred.** While a slug exists without `plan.md`, code edits and execution-flavored subagents are hard-blocked by the plan-mode-guard extension. Don't try to work around it.
-6. Use `gh` CLI for PR management. It is installed and authenticated.
+The evaluator decides done — not a self-reported "complete". Write sharp,
+checkable acceptance criteria; the loop is only as good as the goal.
