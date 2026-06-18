@@ -168,6 +168,9 @@ async function loadJudgeInstructions(pi: ExtensionAPI): Promise<string | null> {
   } catch {
     /* import.meta.url unavailable under some loaders — fall through */
   }
+  // Standard loose-file install location (pi copies prompts/*.md here).
+  const cfgDir = process.env.PI_CODING_AGENT_DIR?.trim() || `${process.env.HOME}/.pi/agent`;
+  candidates.push(`${cfgDir}/prompts/judge.md`);
   candidates.push("prompts/judge.md");
   candidates.push("node_modules/pi-wiggum/prompts/judge.md");
 

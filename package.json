@@ -1,6 +1,6 @@
 {
   "name": "pi-wiggum",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "A goal plugin for pi — state a goal, an external LLM judge evaluates progress and re-fires until it's met.",
   "keywords": ["pi-package", "goal", "agentic", "workflow", "evaluator", "wiggum"],
   "repository": "github:jasondostal/pi-wiggum",
